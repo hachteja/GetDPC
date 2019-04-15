@@ -35,7 +35,6 @@ class GetDPCDelegate(object):
         self.findct=0.3
         self.rcx = 0.
         self.rcy = 0.
-        self.ri = 0.
         self.hpass=0.
         self.lpass=0.
         self.toff = 0.
@@ -336,8 +335,9 @@ class GetDPCDelegate(object):
     def GetICOM(self):
         pty=self.api.library.get_data_item_by_uuid(self.ptyuuid)
         dims=pty.data.shape
-        xx,yy = np.meshgrid((np.arange(0,dims[3])-self.rcx)*self.pixcal,(np.arange(0,dims[2])-self.rcy)*self.pixcal)
-        maskdat=pty.data*((xx**2+yy**2<self.dpcro**2)&(xx**2+yy**2>=self.dpcri**2))
+        xx,yy = np.meshgrid((np.arange(0,dims[3])-self.rcx)/self.pixcal,(np.arange(0,dims[2])-self.rcy)/self.pixcal)
+        print(np.amax(xx),self.ro,self.ri)
+        maskdat=pty.data*((xx**2+yy**2<self.ro**2)&(xx**2+yy**2>=self.ri**2))
         icomx,icomy=np.average(maskdat*xx,axis=(2,3)),np.average(maskdat*yy,axis=(2,3))
         self.comx=icomx*np.cos(self.toff)+icomy*np.sin(self.toff)
         self.comy=-icomx*np.sin(self.toff)+icomy*np.cos(self.toff)
@@ -403,7 +403,7 @@ class GetDPCDelegate(object):
     def GetDetectorImage(self):
         pty=self.api.library.get_data_item_by_uuid(self.ptyuuid).data
         dims=pty.shape
-        xx,yy = np.meshgrid((np.arange(0,dims[3])-self.rcx)*self.pixcal,(np.arange(0,dims[2])-self.rcy)*self.pixcal) 
+        xx,yy = np.meshgrid((np.arange(0,dims[3])-self.rcx)/self.pixcal,(np.arange(0,dims[2])-self.rcy)/self.pixcal) 
         detim=np.sum(pty*((xx**2+yy**2>=self.ri**2) & (xx**2+yy**2<self.ro**2)),axis=(2,3))
         self.api.library.create_data_item_from_data(detim)
 
