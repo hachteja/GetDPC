@@ -17,20 +17,15 @@ from nion.data import xdata_1_0 as xd
 _ = gettext.gettext
 
 class DPCExtension(object):
-    # required for Swift to recognize this as an extension class.
-    extension_id = "GetDPCThisOne"
+    extension_id = "GetDPC"
 
     def __init__(self, api_broker):
-        # grab the api object.
         api = api_broker.get_api(version="1", ui_version="1")
-        # be sure to keep a reference or it will be closed immediately.
         self.__panel_ref = api.create_panel(GetDPCDelegate(api))
         print('Running!')
 
     def close(self):
         print('Closed!')
-        # close will be called when the extension is unloaded. in turn, close any references so they get closed. this
-        # is not strictly necessary since the references will be deleted naturally when this object is deleted.
         self.__panel_ref.close()
         self.__panel_ref = None
 
