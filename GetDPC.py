@@ -10,14 +10,10 @@ from nion.data import Calibration
 from nion.data import DataAndMetadata
 from nion.data import xdata_1_0 as xd
 
-# local libraries
-#from nion.swift.model import HardwareSource
-#from nion.typeshed import API_1_0 as API
-
 _ = gettext.gettext
 
 class DPCExtension(object):
-    extension_id = "GetDPC"
+    extension_id = "GetDPCThisOne"
 
     def __init__(self, api_broker):
         api = api_broker.get_api(version="1", ui_version="1")
@@ -40,16 +36,20 @@ class GetDPCDelegate(object):
         self.rcx = 0.
         self.rcy = 0.
         self.ri = 0.
-        self.ro = 200.
         self.hpass=0.
         self.lpass=0.
         self.toff = 0.
-        self.binN = 1
+        self.binIN = 1
+        self.binRN = 1
         self.conv = 32.
+        self.ri = 0.
+        self.ro = self.conv
+        self.dpcri = self.ri
+        self.dpcro = self.ro
         self.pixcal = 1.
         self.centerfound = False
         self.dpccalculated = False
-        self.cimcalculated = False
+        self.fieldscalculated = False
         self.vimcalculated = False
         self.comx = None
         self.comy = None
@@ -65,330 +65,311 @@ class GetDPCDelegate(object):
 
     def create_panel_widget(self, ui, document_window):#,document_controller):
         Menu = ui.create_column_widget()
-#        CalibrationTitleRow = ui.create_row_widget()
-#        CalibrationTitleRow.add(ui.create_label_widget('Ronchigram Calibration')
-#
-        CalibrationTuningRow = ui.create_row_widget()
-        CalibrationTuningRow.add(ui.create_label_widget("Convergence Angle (mrad):"))
-        convedit = ui.create_line_edit_widget()
-        convedit.text = self.conv
-        def ct_editing_finished(conv):
-            self.conv=float(conv)
+
+        ##############################      
+        ### Ronchigram Calibration ###
+        ##############################
+
+        ### Button and BF Disk Threshold ### 
+        CalibrateRonchiRow = ui.create_row_widget()
+        cal_button = ui.create_push_button_widget("Calibrate Ronchigram")
+        def calclicked():
             try:
-                val = float(conv)
-            except ValueError:
-                print('GotValueError')
-                self.conv=32.
-                convedit.text = self.conv
-            print('Adjusted Convergence Angle to '+str(ct)+' mrad')
-            self.UpdateBFDisk()
-        convedit.on_editing_finished = ct_editing_finished
-        CalibrationTuningRow.add(convedit)
-        CalibrationTuningRow.add_spacing(12)
-        
-        CalibrationTuningRow.add(ui.create_label_widget("BF Disk Threshold (0-1):"))
+                self.ptyuuid=document_window.target_data_item.uuid
+                self.CalibrateRonchigram()
+            except AttributeError:
+                print('AttributeError: Select the 4D-STEM Dataset')
+            rcxedit.text = round(self.rcx,1)
+            rcyedit.text = round(self.rcy,1)
+            pixcaledit.text = round(self.pixcal,1)
+        cal_button.on_clicked = calclicked
+        CalibrateRonchiRow.add(cal_button)
+        CalibrateRonchiRow.add_spacing(6)
+        CalibrateRonchiRow.add(ui.create_label_widget("BF Limit (0-1):"))
         ctedit = ui.create_line_edit_widget()
-        ctedit.text = self.findct
+        ctedit.text = round(self.findct,1)
         def ct_editing_finished(ct):
-            self.findct=float(ct)
             try:
-                val = float(ct)
+                if float(self.findct)!=float(ct): print('Changed BF Disk Finding Threshold to '+str(ct))
+                self.findct=float(ct)
+                ctedit.text = round(self.findct,1)
             except ValueError:
-                print('GotValueError')
-                self.findct=0.3
-                ctedit.text = self.findct
-            print('Adjusted BF disk calibration threshold to '+str(ct))
+                print('ValueError: Not Changing BF Limit')
+                ctedit.text = round(self.findct,1)
             self.UpdateBFDisk()
         ctedit.on_editing_finished = ct_editing_finished
-        CalibrationTuningRow.add(ctedit)
-        
-        CalibrationButtonRow = ui.create_row_widget()
-        cal_button = ui.create_push_button_widget("Calibrate!")
-        def calclicked():
-            self.ptyuuid=document_window.target_data_item.uuid
-            self.CalibrateRonchigram()
-            rcxedit.text = round(self.rcx,2)
-            rcyedit.text = round(self.rcy,2)
-        cal_button.on_clicked = calclicked
-        CalibrationButtonRow.add(cal_button)
-        CalibrationButtonRow.add_spacing(24)
-        
-        CalibrationParamsRow = ui.create_row_widget()
-        CalibrationParamsRow.add(ui.create_label_widget("Calibration (pixels/mrad):"))
-        caledit = ui.create_line_edit_widget()
-        caledit.text = self.pixcal
-        def cal_editing_finished(cal):
-            self.pixcal=float(cal)
-            try:
-                val = float(cal)
-            except ValueError:
-                print('GotValueError')
-                self.pixcal=1
-                caledit.text = self.pixcal
-            print('MadeItPastTry')
-            print(self.pixcal)
-            self.UpdateBFDisk()
-        caledit.on_editing_finished = cal_editing_finished
-        CalibrationParamsRow.add(caledit)
-        CalibrationParamsRow.add_spacing(16)
-        
-        CalibrationParamsRow.add(ui.create_label_widget("Ronchigram Center (pixels)    X:"))
+        CalibrateRonchiRow.add(ctedit)
+        CalibrateRonchiRow.add_spacing(8)
+      
+        ### Center X and Y ###
+        CalibratedCenterRow = ui.create_row_widget()
+        CalibratedCenterRow.add_spacing(8)
+        CalibratedCenterRow.add(ui.create_label_widget("Center of Ronchigram (pixels)   X:"))
         rcxedit = ui.create_line_edit_widget()
-        rcxedit.text = self.rcx 
+        rcxedit.text = round(self.rcx,1) 
         def rcx_editing_finished(x):
-            if float(self.rcx)!=float(x): print('Manually Changed Ronchigram Center X Pixel from '+str(self.rcx)+' to '+str(x))
-            self.rcx=float(x)
             try:
-                val = float(x)
+                if float(self.rcx)!=float(x): print('Manually Changed Ronchigram Center X Pixel from '+str(self.rcx)+' to '+str(x))
+                self.rcx=float(x)
+                rcxedit.text = round(self.rcx,1) 
             except ValueError:
-                print('GotValueError')
-                self.rcx=0.
-                rcxedit.text = self.rcx
+                print('ValueError: Not Changing X-Center Position')
+                rcxedit.text = round(self.rcx,1) 
             self.UpdateBFDisk()
         rcxedit.on_editing_finished = rcx_editing_finished
-        CalibrationParamsRow.add(rcxedit)
-        CalibrationParamsRow.add_spacing(8)
-        
-        CalibrationParamsRow.add(ui.create_label_widget("Y:"))
+        CalibratedCenterRow.add(rcxedit)
+        CalibratedCenterRow.add_spacing(8)
+        CalibratedCenterRow.add(ui.create_label_widget("Y: "))
         rcyedit = ui.create_line_edit_widget()
-        rcyedit.text = self.rcy 
+        rcyedit.text = round(self.rcy,1) 
         def rcy_editing_finished(y):
-            if float(self.rcy)!=float(y): print('Manually Changed Ronchigram Center Y Pixel from '+str(self.rcy)+' to '+str(y))
-            self.rcy=float(y)
             try:
-                val = float(y)
+                if float(self.rcy)!=float(y): print('Manually Changed Ronchigram Center Y Pixel from '+str(self.rcy)+' to '+str(y))
+                self.rcy=float(y)
+                rcyedit.text = round(self.rcy,1)
             except ValueError:
-                print('GotValueError')
-                self.rcy=0.
-                rcyedit.text = self.rcy
+                print('ValueError: Not Changing Y-Center Position')
+                rcyedit.text = round(self.rcy,1)
             self.UpdateBFDisk()
         rcyedit.on_editing_finished = rcy_editing_finished
-        CalibrationParamsRow.add(rcyedit)
+        CalibratedCenterRow.add(rcyedit)
+        CalibratedCenterRow.add_spacing(8)
+        
+        ### Convergence Angle and Calibration Display ###       
+        CalibrationParamsRow=ui.create_row_widget()
+        CalibrationParamsRow.add_spacing(8)
+        CalibrationParamsRow.add(ui.create_label_widget("Conv. Angle (mrad): "))
+        convedit = ui.create_line_edit_widget()
+        convedit.text = round(self.conv,1)  
+        def conv_editing_finished(conv):
+            try:
+                if float(self.conv)!=float(conv): print('Set Convergence Angle to '+str(conv)+' mrad')
+                self.conv=float(conv)
+                convedit.text = round(self.conv,1)  
+            except ValueError:
+                print('ValueError: Not Changing Convergence Angle')
+                convedit.text = round(self.conv,1)  
+            self.UpdateBFDisk()
+        convedit.on_editing_finished = conv_editing_finished
+        CalibrationParamsRow.add(convedit)
+        CalibrationParamsRow.add_spacing(8)
+        CalibrationParamsRow.add(ui.create_label_widget("Cal. (pixels/mrad): "))
+        pixcaledit = ui.create_line_edit_widget()
+        pixcaledit.text = round(self.pixcal,1)  
+        def pixcal_editing_finished(pixcal):
+            try:
+                if float(self.pixcal)!=float(pixcal): print('Manually Changed Calibration to '+str(self.pixcal)+' pixels per mrad')
+                self.pixcal=float(pixcal)
+                pixcaledit.text = round(self.pixcal,1)  
+            except ValueError:
+                print('ValueError: Not Changing Calibration')
+                pixcaledit.text = round(self.pixcal,1)  
+            self.UpdateBFDisk()
+        pixcaledit.on_editing_finished = pixcal_editing_finished
+        CalibrationParamsRow.add(pixcaledit)
         CalibrationParamsRow.add_spacing(8)
         
-        GetDPCRow = ui.create_row_widget()
-        getdpc_button = ui.create_push_button_widget("Get DPC from 4D Dataset")
-        def GetDPC_clicked():
-            self.ComputeDPC()
-        getdpc_button.on_clicked = GetDPC_clicked
-        GetDPCRow.add(getdpc_button)
+        ### Group and Display ###
+        RonchigramCalibration = ui.create_column_widget()
+        RonchigramCalibration.add(CalibrateRonchiRow)
+        RonchigramCalibration.add(CalibratedCenterRow)
+        RonchigramCalibration.add(CalibrationParamsRow)
+        Menu.add(RonchigramCalibration) 
 
-        GetCIMRow = ui.create_row_widget()
-        getcim_button = ui.create_push_button_widget("Get Field Directions from 4D Dataset")
-        def GetCIM_clicked():
-            self.GetFieldDirection()
-        getcim_button.on_clicked = GetCIM_clicked
-        GetCIMRow.add(getcim_button)
-
-        GetDetImRow = ui.create_row_widget()
-        getdetim_button = ui.create_push_button_widget("Get Detector Image")
-        def GetDETIM_clicked():
-            self.GetDetectorImage()
-        getdetim_button.on_clicked = GetDETIM_clicked
-        GetDetImRow.add(getdetim_button)
+        ############################
+        ### Image Reconstruction ### 
+        ############################
         
+        ### Set Inner and Outer Angle ###
         GetDIParamsRow = ui.create_row_widget()
-        GetDIParamsRow.add(ui.create_label_widget("Inner Radius:"))
+        GetDIParamsRow.add_spacing(8)
+        GetDIParamsRow.add(ui.create_label_widget("Detector Radius (mrad)   Inner: "))
         riedit = ui.create_line_edit_widget()
-        riedit.text = self.ri
+        riedit.text = round(self.ri,1)  
         def ri_editing_finished(ri):
-            self.ri=float(ri)
             try:
-                val = float(ri)
+                if float(self.ri)!=float(ri): print('Set Inner Detector Radius for Image Reconstruction to '+str(ri)+' mrad')
+                self.ri=float(ri)
+                riedit.text = round(self.ri,1)  
             except ValueError:
-                print('GotValueError')
-                self.ri=0.
-                riedit.text = self.ri
-            print('MadeItPastTry')
-            print(self.ri)
-           # self.UpdateBFDisk()
+                print('ValueError: Not Changing Inner Radius')
+                riedit.text = round(self.ri,1)  
         riedit.on_editing_finished = ri_editing_finished
         GetDIParamsRow.add(riedit)
         GetDIParamsRow.add_spacing(8)
-        
-        GetDIParamsRow.add(ui.create_label_widget("Outer Radius:"))
+        GetDIParamsRow.add(ui.create_label_widget("Outer: "))
         roedit = ui.create_line_edit_widget()
-        roedit.text = self.ro
+        roedit.text = round(self.ro,1)  
         def ro_editing_finished(ro):
-            self.ro=float(ro)
             try:
-                val = float(ro)
+                if float(self.ro)!=float(ro): print('Set Outer Detector Radius for Image Reconstruction to '+str(ro)+' mrad')
+                self.ro=float(ro)
+                roedit.text = round(self.ro,1)  
             except ValueError:
-                print('GotValueError')
-                self.ro=0.
-                roedit.text = self.ro
-            print('MadeItPastTry')
-            print(self.ro)
-           # self.UpdateBFDisk()
+                print('ValueError: Not Changing Outer Radius')
+                roedit.text = round(self.ro,1)  
         roedit.on_editing_finished = ro_editing_finished
         GetDIParamsRow.add(roedit)
         GetDIParamsRow.add_spacing(8)
+        
+        ### Get Detector Image Button ###
+        GetDIButtonRow = ui.create_row_widget()
+        getdi_button = ui.create_push_button_widget("Get Detector Image")
+        def GetDI_clicked():
+            self.GetDetectorImage()
+        getdi_button.on_clicked = GetDI_clicked
+        GetDIButtonRow.add(getdi_button)
 
+        ### Group and Display ###
+        ImageReconstruction=ui.create_column_widget()
+        ImageReconstruction.add(GetDIParamsRow)
+        ImageReconstruction.add(GetDIButtonRow)
+        Menu.add_spacing(12)
+        Menu.add(ImageReconstruction)
+
+        ###################
+        ### Perform DPC ###
+        ###################
+
+        ### Calculate Center of Mass Shifts
+        GetCOMShiftRow = ui.create_row_widget()
+        getcom_button = ui.create_push_button_widget("Get Center of Mass Shifts")
+        def GetCOM_clicked():
+            self.GetICOM()
+        getcom_button.on_clicked = GetCOM_clicked
+        GetCOMShiftRow.add(getcom_button)
+
+        ### Get Electric Field Magnitudes and Vectors
+        GetERow = ui.create_row_widget()
+        gete_button = ui.create_push_button_widget("Get Electric Field")
+        def GetE_clicked():
+            self.GetEFields()
+        gete_button.on_clicked = GetE_clicked
+        GetERow.add(gete_button)
+        
+        ### Reconstruct Atomic Potential with Inverse Gradient 
         GetPOTRow = ui.create_row_widget()
         getpot_button = ui.create_push_button_widget("Get Atomic Potential")
         def GetPOT_clicked():
             self.GetPotential()
         getpot_button.on_clicked = GetPOT_clicked
         GetPOTRow.add(getpot_button)
+ 
+        ### Set High Pass Filtering 
+        GetPOTRow.add(ui.create_label_widget("High Pass:"))
+        hpedit = ui.create_line_edit_widget()
+        hpedit.text = self.hpass
+        def hp_editing_finished(hp):
+            try:
+                if float(self.hpass)!=float(hp): print('Set High Pass Filter for Potential Reconstruction to '+str(hp))
+                self.hpass=float(hp)
+                hpedit.text = self.hpass  
+            except ValueError:
+                print('GotValueError: Did not change High Pass Filter')
+                hpedit.text = self.hpass
+        hpedit.on_editing_finished = hp_editing_finished
+        GetPOTRow.add(hpedit)
+        GetPOTRow.add_spacing(8)
         
+        ### Set Low Pass Filtering 
+        GetPOTRow.add(ui.create_label_widget("Low Pass:"))
+        lpedit = ui.create_line_edit_widget()
+        lpedit.text = self.lpass
+        def lp_editing_finished(lp):
+            try:
+                if float(self.lpass)!=float(lp): print('Set High Pass Filter for Potential Reconstruction to '+str(lp))
+                self.lpass=float(lp)
+                lpedit.text = self.lpass  
+            except ValueError:
+                print('GotValueError: Did not change High Pass Filter')
+                lpedit.text = self.lpass
+        lpedit.on_editing_finished = lp_editing_finished
+        GetPOTRow.add(lpedit)
+
+        ### Group and Display ###
+        DPC=ui.create_column_widget()
+        DPC.add(GetCOMShiftRow)
+        DPC.add(GetERow)
+        DPC.add(GetPOTRow)
+        Menu.add_spacing(12)
+        Menu.add(DPC)
+        
+        ####################
+        ### Bin Datasets ###
+        ####################
+
+        ### Set Image Binning
+        Bin4DRow = ui.create_row_widget()
+        Bin4DRow.add_spacing(8)
+        Bin4DRow.add(ui.create_label_widget("Bin Image by: "))
+        binimageedit = ui.create_line_edit_widget()
+        binimageedit.text = self.binIN
+        def bin_image_editing_finished(n):
+            try:
+                if float(self.binIN)!=float(n): print('Setting Image Bin Value to '+str(n))
+                self.binIN=int(n)
+                binimageedit.text = self.binIN 
+            except ValueError:
+                print('GotValueError: Did Not Change Image Binning Value')
+                binimageedit.text = self.binIN
+        binimageedit.on_editing_finished = bin_image_editing_finished
+        Bin4DRow.add(binimageedit)
+        Bin4DRow.add_spacing(8)
+        
+        ### Set Ronchigram Binning
+        Bin4DRow.add(ui.create_label_widget("Bin Ronchigrams by: "))
+        binronchiedit = ui.create_line_edit_widget()
+        binronchiedit.text = self.binRN
+        def bin_ronchi_editing_finished(n):
+            try:
+                if float(self.binRN)!=float(n): print('Setting Ronchigram Bin Value to '+str(n))
+                self.binRN=int(n)
+                binronchiedit.text = self.binRN 
+            except ValueError:
+                print('GotValueError: Did Not Change Ronchigram Binning Value')
+                binronchieditedit.text = self.binRN
+        binronchiedit.on_editing_finished = bin_ronchi_editing_finished
+        Bin4DRow.add(binronchiedit)
+        Bin4DRow.add_spacing(8)
+        
+        ### Bin Ronchigram Button
+        BinButtonRow = ui.create_row_widget()
+        bin_button = ui.create_push_button_widget("Bin It!")
+        def Bin4D_clicked():
+            self.ptyuuid=document_window.target_data_item.uuid
+            self.GetBinned4D()
+        bin_button.on_clicked = Bin4D_clicked
+        BinButtonRow.add(bin_button)
+
+        ### Group and Display ###
+        BinIt=ui.create_column_widget()
+        BinIt.add(Bin4DRow)
+        BinIt.add(BinButtonRow)
+        Menu.add_spacing(12)
+        Menu.add(BinIt)
+        
+        #########################
+        ### Clear Stored Data ###
+        #########################
+
         ClearRow = ui.create_row_widget()
         clear_button = ui.create_push_button_widget("Clear Stored Data")
         def CLEAR():
             self.cleardpcuuid()
         clear_button.on_clicked = CLEAR
         ClearRow.add(clear_button)
-
-        GetPOTRow.add(ui.create_label_widget("High Pass:"))
-        hpedit = ui.create_line_edit_widget()
-        hpedit.text = self.hpass
-        def hp_editing_finished(hp):
-            self.hpass=float(hp)
-            try:
-                val = float(hp)
-            except ValueError:
-                print('GotValueError')
-                self.hp=0.
-                hpedit.text = self.hpass
-            print('MadeItPastTry')
-            print(self.hpass)
-           # self.UpdateBFDisk()
-        hpedit.on_editing_finished = hp_editing_finished
-        GetPOTRow.add(hpedit)
-        GetPOTRow.add_spacing(8)
-
-        GetPOTRow.add(ui.create_label_widget("Low Pass:"))
-        lpedit = ui.create_line_edit_widget()
-        lpedit.text = self.lpass
-        def lp_editing_finished(lp):
-            self.lpass=float(lp)
-            try:
-                val = float(lp)
-            except ValueError:
-                print('GotValueError')
-                self.lp=0.
-                lpedit.text = self.lpass
-            print('MadeItPastTry')
-            print(self.lpass)
-           # self.UpdateBFDisk()
-        lpedit.on_editing_finished = lp_editing_finished
-        GetPOTRow.add(lpedit)
-        
-        Bin4DRow = ui.create_row_widget()
-        bin4d_button = ui.create_push_button_widget("Bin Ronchigrams of 4D Dataset")
-        def Bin4D_clicked():
-            self.ptyuuid=document_window.target_data_item.uuid
-            self.GetBinned4D()
-        bin4d_button.on_clicked = Bin4D_clicked
-        Bin4DRow.add(bin4d_button)
-
-        Bin4DRow.add(ui.create_label_widget("Bin by:"))
-        binedit = ui.create_line_edit_widget()
-        binedit.text = self.binN
-        def bin_editing_finished(n):
-            self.binN=int(n)
-            try:
-                val = int(n)
-            except ValueError:
-                print('GotValueError')
-                self.binN=1
-                binedit.text = self.binN
-            print('MadeItPastTry')
-            print(self.binN)
-        binedit.on_editing_finished = bin_editing_finished
-        Bin4DRow.add(binedit)
-        
-#        CalibrateRonchiRow = ui.create_row_widget()
-#        cal_button = ui.create_push_button_widget("Calibrate Ronchigrams")
-#        def calclicked():
-#            self.ptyuuid=document_window.target_data_item.uuid
-#            self.CalibrateRonchigram()
-#            rcxedit.text = round(self.rcx,2)
-#            rcyedit.text = round(self.rcy,2)
-#        cal_button.on_clicked = calclicked
-#        CalibrateRonchiRow.add(cal_button)
-#        CalibrateRonchiRow.add_spacing(24)
-        
-        FindcParamsrow = ui.create_row_widget()
-        FindcParamsrow.add(ui.create_label_widget("Cal. (pix/mrad):"))
-        caledit = ui.create_line_edit_widget()
-        caledit.text = self.pixcal
-        def cal_editing_finished(cal):
-            self.pixcal=float(cal)
-            try:
-                val = float(cal)
-            except ValueError:
-                print('GotValueError')
-                self.pixcal=1
-                caledit.text = self.pixcal
-            print('MadeItPastTry')
-            print(self.pixcal)
-            self.UpdateBFDisk()
-        caledit.on_editing_finished = cal_editing_finished
-        FindcParamsrow.add(caledit)
-        FindcParamsrow.add_spacing(16)
-        FindcParamsrow.add(ui.create_label_widget("BF Disk Threshold (0-1):"))
-        ctedit = ui.create_line_edit_widget()
-        ctedit.text = self.findct
-        def ct_editing_finished(ct):
-            self.findct=float(ct)
-            try:
-                val = float(ct)
-            except ValueError:
-                print('GotValueError')
-                self.findct=0.3
-                ctedit.text = self.findct
-            print('MadeItPastTry')
-            print(self.findct)
-            self.UpdateBFDisk()
-        ctedit.on_editing_finished = ct_editing_finished
-        FindcParamsrow.add(ctedit)
-      
- #       Menu.add(CalibrationTitleRow)
-        Menu.add(CalibrationTuningRow)
-        Menu.add(CalibrationButtonRow)
-        Menu.add(CalibrationParamsRow)
-       # Menu.add(CalibrateRonchiRow)
-       # Menu.add(rcxcyrow)
-        Menu.add(GetDIParamsRow)
-        Menu.add(GetDetImRow)
-        Menu.add(GetDPCRow)
-        Menu.add(GetCIMRow)
-        Menu.add(GetPOTRow)
-        Menu.add(Bin4DRow)
+        Menu.add_spacing(12)
         Menu.add(ClearRow)
         return Menu
 
-    def CalibrateRonchigram(self):
-        #from scipy import ndimage
-        pty=self.api.library.get_data_item_by_uuid(self.ptyuuid)
-        t=self.findct#;sig=self.findblur
-        R=np.sum(pty.data,axis=(0,1))
-        NV,NU=R.shape[:2]
-        Rn=((R-np.amin(R))/np.ptp(R))
-        BFdisk=np.ones(R.shape)*(Rn>t)
-        uu,vv = np.meshgrid(np.arange(0,NV), np.arange(0,NU))
-        self.rcx = np.sum(BFdisk*uu/np.sum(BFdisk))
-        self.rcy = np.sum(BFdisk*vv/np.sum(BFdisk))
-	#NY,NX=Rn.shape[:2]
-        
-        #BFdisk=np.ones(Rn.shape)*(ndimage.gaussian_filter(Rn,sig)>t)
-        #xx,yy = np.meshgrid(np.arange(0,NY), np.arange(0,NX))
-        #self.rcx = np.sum(BFdisk*xx/np.sum(BFdisk))
-        #self.cy = np.sum(BFdisk*yy/np.sum(BFdisk)) + NY/128.###DON'T LEAVE THIS!!!
-        print(NV/128.)
-        if len(pty.graphics)<1:
-            daty,datx=R.data.shape
-            frcx=self.rcx/float(datx);frcy=self.rcy/float(daty);fr=self.conv*self.pixcal/float(datx)
-            pty.add_ellipse_region(center_y=frcy,center_x=frcx,height=2*fr,width=2*fr)
-        else: self.UpdateBFDisk()
-
-    def cleardpcuuid(self):
-        ptyuuid=None
-        self.dpccalculated=False
-        self.cimcalculated=False
-        self.vimcalculated=False
+##########################################
+##########################################
+####### Functions for DPC Analysis #######
+##########################################
+##########################################
 
     def UpdateBFDisk(self):
+        #Updates Annotation of circle around BF disk
         if self.ptyuuid==None: return
         pty=self.api.library.get_data_item_by_uuid(self.ptyuuid)
         daty,datx=pty.data.shape[2:]
@@ -396,59 +377,107 @@ class GetDPCDelegate(object):
         if len(pty.graphics)<1.:
             pty.add_ellipse_region(center_y=frcy,center_x=frcx,height=2*fr,width=2*fr)
         else: pty.graphics[0].bounds=((frcy-fr,frcx-fr),(2*fr,2*fr))
-        
-    def ComputeDPC(self):
+
+    def CalibrateRonchigram(self):
         pty=self.api.library.get_data_item_by_uuid(self.ptyuuid)
-        daty,datx=pty.data.shape[2:]
-        fx=2*float(self.rcx+0.5)/datx
-        fy=2*float(self.rcy+0.5)/daty
-        xran=np.linspace(-fx,2-fx,datx)
-        yran=np.linspace(-fy,2-fy,daty)
-        xx,yy = np.meshgrid(xran,yran)
-        icomx,icomy=np.sum(pty.data*xx,axis=(2,3)),np.sum(pty.data*yy,axis=(2,3))
+#        t=self.findct#;sig=self.findblur
+        R=np.sum(pty.data,axis=(0,1))
+        try: NY,NX=R.shape[:2]
+        except ValueError: print('ValueError: Select the 4D-STEM Dataset');return
+        Rn=((R-np.amin(R))/np.ptp(R))
+        BFdisk=np.ones(R.shape)*(Rn>self.findct)
+        xx,yy = np.meshgrid(np.arange(0,NY), np.arange(0,NX))
+        self.rcx = np.sum(BFdisk*xx/np.sum(BFdisk))
+        self.rcy = np.sum(BFdisk*yy/np.sum(BFdisk))
+        edge=(np.sum(np.abs(np.gradient(BFdisk)),axis=0))>self.findct
+        self.pixcal=np.average(np.sqrt((xx-self.rcx)**2+(yy-self.rcy)**2)[edge])/self.conv
+        print('Calibrated Ronchigrams. Sub-Pixel Center of BF Disk: X-'+str(round(self.rcx,2))+' Y-'+str(round(self.rcy,2))+'    Calibration: '+str(round(self.pixcal,2))+' pixels/mrad')
+        if len(pty.graphics)<1:
+            daty,datx=R.data.shape
+            frcx=self.rcx/float(datx);frcy=self.rcy/float(daty);fr=self.conv*self.pixcal/float(datx)
+            pty.add_ellipse_region(center_y=frcy,center_x=frcx,height=2*fr,width=2*fr)
+        else: self.UpdateBFDisk()
+
+    def GetICOM(self):
+        pty=self.api.library.get_data_item_by_uuid(self.ptyuuid)
+        dims=pty.data.shape
+        xx,yy = np.meshgrid((np.arange(0,dims[3])-self.rcx)*self.pixcal,(np.arange(0,dims[2])-self.rcy)*self.pixcal)
+        maskdat=pty.data*((xx**2+yy**2<self.dpcro**2)&(xx**2+yy**2>=self.dpcri**2))
+        icomx,icomy=np.average(maskdat*xx,axis=(2,3)),np.average(maskdat*yy,axis=(2,3))
         self.comx=icomx*np.cos(self.toff)+icomy*np.sin(self.toff)
         self.comy=-icomx*np.sin(self.toff)+icomy*np.cos(self.toff)
-        self.EIM=np.sqrt(icomx**2+icomy**2)
+        print('Calculated Center of Mass Shifts Based on Camera/Scan Angle Offset of '+str(round(self.toff,1))+' radians`')
         if not self.dpccalculated:
             self.api.library.create_data_item_from_data(self.comx)
             self.comxuuid=self.api.library.data_items[-1].uuid
             self.api.library.create_data_item_from_data(self.comy)
             self.comyuuid=self.api.library.data_items[-1].uuid
-            self.api.library.create_data_item_from_data(self.EIM)
-            self.EIMuuid=self.api.library.data_items[-1].uuid
+            #self.api.library.create_data_item_from_data(self.EIM)
             self.dpccalculated=True
         else:
             COMX = self.api.library.get_data_item_by_uuid(self.comxuuid)
             COMX.data=self.comx
             COMY = self.api.library.get_data_item_by_uuid(self.comyuuid)
             COMY.data=self.comy
-            eim = self.api.library.get_data_item_by_uuid(self.EIMuuid)
-            eim.data=self.EIM
+           # eim = self.api.library.get_data_item_by_uuid(self.EIMuuid)
+           # eim.data=self.EIM
 
-    def GetFieldDirection(self):
-        print("Getting Here")
+  #  def ComputeDPC(self):
+  #      pty=self.api.library.get_data_item_by_uuid(self.ptyuuid)
+  #      daty,datx=pty.data.shape[2:]
+  #      fx=2*float(self.rcx+0.5)/datx
+  #      fy=2*float(self.rcy+0.5)/daty
+  #      xran=np.linspace(-fx,2-fx,datx)
+  #      yran=np.linspace(-fy,2-fy,daty)
+  #      xx,yy = np.meshgrid(xran,yran)
+  #      icomx,icomy=np.sum(pty.data*xx,axis=(2,3)),np.sum(pty.data*yy,axis=(2,3))
+  #      self.comx=icomx*np.cos(self.toff)+icomy*np.sin(self.toff)
+  #      self.comy=-icomx*np.sin(self.toff)+icomy*np.cos(self.toff)
+  #      self.EIM=np.sqrt(icomx**2+icomy**2)
+  #      if not self.dpccalculated:
+  #          self.api.library.create_data_item_from_data(self.comx)
+  #          self.comxuuid=self.api.library.data_items[-1].uuid
+  #          self.api.library.create_data_item_from_data(self.comy)
+  #          self.comyuuid=self.api.library.data_items[-1].uuid
+  #          self.api.library.create_data_item_from_data(self.EIM)
+  #          self.EIMuuid=self.api.library.data_items[-1].uuid
+  #          self.dpccalculated=True
+  #      else:
+  #          COMX = self.api.library.get_data_item_by_uuid(self.comxuuid)
+  #          COMX.data=self.comx
+  #          COMY = self.api.library.get_data_item_by_uuid(self.comyuuid)
+  #          COMY.data=self.comy
+  #          eim = self.api.library.get_data_item_by_uuid(self.EIMuuid)
+  #          eim.data=self.EIM
+
+    def GetEFields(self):
         import matplotlib.colors
-        X=self.comx;Y=self.comy
-        XY=np.zeros(X.shape+(3,),dtype=float)
-        Eint=np.sqrt(X**2+Y**2)
-        M=np.amax(Eint)
-        for i in range(X.shape[0]):
-            for j in range(X.shape[1]):
-                XY[i,j]=np.angle(np.complex(X[i,j],Y[i,j]))/(2*np.pi)%1,1,Eint[i,j]/M
+        EX=-self.comx;EY=-self.comy
+        EMAG=np.sqrt(EX**2+EY**2)
+        XY=np.zeros(EX.shape+(3,),dtype=float)
+        M=np.amax(EMAG)
+        for i in range(EX.shape[0]):
+            for j in range(EX.shape[1]):
+                XY[i,j]=np.angle(np.complex(EX[i,j],EY[i,j]))/(2*np.pi)%1,1,EMAG[i,j]/M
+        self.EIM=EMAG
         self.CIMxd=xd.rgb(*np.transpose(matplotlib.colors.hsv_to_rgb(XY),(2,0,1)))
-        if not self.cimcalculated:
+        if not self.fieldscalculated:
+            self.api.library.create_data_item_from_data(self.EIM)
+            self.EIMuuid=self.api.library.data_items[-1].uuid
             self.api.library.create_data_item()
             self.CIMuuid=self.api.library.data_items[-1].uuid
             cimdataitem=self.api.library.get_data_item_by_uuid(self.CIMuuid)
             cimdataitem.xdata=self.CIMxd
-            self.cimcalculated=True
+            self.fieldscalculated=True
         else:
+            eim = self.api.library.get_data_item_by_uuid(self.EIMuuid)
+            eim.data=self.EIM
             cimdataitem=self.api.library.get_data_item_by_uuid(self.CIMuuid)
             cimdataitem.xdata=self.CIMxd
 
     def GetPotential(self):
         print("Getting Here")
-        X=-self.comx;Y=-self.comy
+        X=self.comx;Y=self.comy
         fCX=np.fft.fftshift(np.fft.fft2(np.fft.fftshift(X)))   
         fCY=np.fft.fftshift(np.fft.fft2(np.fft.fftshift(Y)))
         KX=fCX.shape[1];KY=fCY.shape[0]
@@ -469,20 +498,38 @@ class GetDPCDelegate(object):
 
     def GetDetectorImage(self):
         pty=self.api.library.get_data_item_by_uuid(self.ptyuuid).data
-        X=pty.shape[3];Y=pty.shape[2]
-        fx=self.rcx+0.5;fy=self.rcy+.05
-        xran=np.linspace(-fx,X-fx,X)
-        yran=np.linspace(-fy,Y-fy,Y)
-        xx,yy = np.meshgrid(xran*self.pixcal,yran*self.pixcal) 
+        dims=pty.shape
+        xx,yy = np.meshgrid((np.arange(0,dims[3])-self.rcx)*self.pixcal,(np.arange(0,dims[2])-self.rcy)*self.pixcal) 
         detim=np.sum(pty*((xx**2+yy**2>=self.ri**2) & (xx**2+yy**2<self.ro**2)),axis=(2,3))
         self.api.library.create_data_item_from_data(detim)
 
-    def GetBinned4D(self):
-        N=self.binN
+    def Bin4DRealSpace(self):
+#        Nim=self.binIN;Nro=self.binRN
         pty=self.api.library.get_data_item_by_uuid(self.ptyuuid).data
-        NY,NX=int(pty.shape[2]/N),int(pty.shape[3]/N)
-        ptybin=np.zeros((pty.shape[0],pty.shape[1],NY,NX))
-        for i in range(NY):
-            for j in range(NX):
-                ptybin[:,:,i,j]=np.sum(pty[:,:,N*i:N*(i+1),N*j:N*(j+1)],axis=(2,3))
+        dims=pty.sh
+        X,Y=np.array([pty.shape[0]/Nim,pty.shape[1]/Nim,pty.shape[2]/Nro,pty.shape[3]/Nro]).astype(int)
+        ptybin=np.zeros(bindims)
+        if Nim<=1 and Nro<=1: print('Enter Binning Values > 1'); return
+        elif Nro==1:
+            for i in range(bindims[0]):
+                for j in range(bindims[1]):
+                    ptybin[i,j]=np.average(pty[Nim*i:Nim*(i+1),Nim*j:Nim*(j+1)],axis=(0,1))
+        elif Nim==1:
+            for i in range(bindims[2]):
+                for j in range(bindims[3]):
+                    ptybin[:,:,i,j]=np.average(pty[:,:,Nro*i:Nro*(i+1),Nro*j:Nro*(j+1)],axis=(2,3))
+        else:
+            for i in range(bindims[0]):
+                for j in range(bindims[1]):
+                    for k in range(bindims[2]):
+                        for l in range(bindims[3]):
+                            ptybin[i,j]=np.average(pty[Nim*i:Nim*(i+1),Nim*j:Nim*(j+1),Nro*k:Nro*(k+1),Nro*l:Nro*(l+1)],axis=(0,1,2,3))
         self.api.library.create_data_item_from_data(ptybin)
+
+    def cleardpcuuid(self):
+        ptyuuid=None
+        self.dpccalculated=False
+        self.cimcalculated=False
+        self.vimcalculated=False
+
+
