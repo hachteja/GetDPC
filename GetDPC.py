@@ -39,8 +39,6 @@ class GetDPCDelegate(object):
         self.hpass=0.
         self.lpass=0.
         self.toff = 0.
-        self.binIN = 1
-        self.binRN = 1
         self.conv = 32.
         self.ri = 0.
         self.ro = self.conv
@@ -64,7 +62,6 @@ class GetDPCDelegate(object):
         self.VIMuuid = None
 
     def create_panel_widget(self, ui, document_window):#,document_controller):
-        Menu = ui.create_column_widget()
 
         ##############################      
         ### Ronchigram Calibration ###
@@ -174,43 +171,42 @@ class GetDPCDelegate(object):
         RonchigramCalibration.add(CalibrateRonchiRow)
         RonchigramCalibration.add(CalibratedCenterRow)
         RonchigramCalibration.add(CalibrationParamsRow)
-        Menu.add(RonchigramCalibration) 
 
-        ############################
-        ### Image Reconstruction ### 
-        ############################
+        ####################################
+        ### Image Reconstruction and DPC ### 
+        ####################################
         
         ### Set Inner and Outer Angle ###
-        GetDIParamsRow = ui.create_row_widget()
-        GetDIParamsRow.add_spacing(8)
-        GetDIParamsRow.add(ui.create_label_widget("Detector Radius (mrad)   Inner: "))
+        SetRadiiRow = ui.create_row_widget()
+        SetRadiiRow.add_spacing(8)
+        SetRadiiRow.add(ui.create_label_widget("Set Detector Radii (mrad). Inner: "))
         riedit = ui.create_line_edit_widget()
         riedit.text = round(self.ri,1)  
         def ri_editing_finished(ri):
             try:
-                if float(self.ri)!=float(ri): print('Set Inner Detector Radius for Image Reconstruction to '+str(ri)+' mrad')
+                if float(self.ri)!=float(ri): print('Set Inner Radius for Image Reconstruction and DPC to '+str(ri)+' mrad')
                 self.ri=float(ri)
                 riedit.text = round(self.ri,1)  
             except ValueError:
                 print('ValueError: Not Changing Inner Radius')
                 riedit.text = round(self.ri,1)  
         riedit.on_editing_finished = ri_editing_finished
-        GetDIParamsRow.add(riedit)
-        GetDIParamsRow.add_spacing(8)
-        GetDIParamsRow.add(ui.create_label_widget("Outer: "))
+        SetRadiiRow.add(riedit)
+        SetRadiiRow.add_spacing(8)
+        SetRadiiRow.add(ui.create_label_widget("Outer: "))
         roedit = ui.create_line_edit_widget()
         roedit.text = round(self.ro,1)  
         def ro_editing_finished(ro):
             try:
-                if float(self.ro)!=float(ro): print('Set Outer Detector Radius for Image Reconstruction to '+str(ro)+' mrad')
+                if float(self.ro)!=float(ro): print('Set Outer Detector Radius for Image Reconstruction and DPC to '+str(ro)+' mrad')
                 self.ro=float(ro)
                 roedit.text = round(self.ro,1)  
             except ValueError:
                 print('ValueError: Not Changing Outer Radius')
                 roedit.text = round(self.ro,1)  
         roedit.on_editing_finished = ro_editing_finished
-        GetDIParamsRow.add(roedit)
-        GetDIParamsRow.add_spacing(8)
+        SetRadiiRow.add(roedit)
+        SetRadiiRow.add_spacing(8)
         
         ### Get Detector Image Button ###
         GetDIButtonRow = ui.create_row_widget()
@@ -219,17 +215,6 @@ class GetDPCDelegate(object):
             self.GetDetectorImage()
         getdi_button.on_clicked = GetDI_clicked
         GetDIButtonRow.add(getdi_button)
-
-        ### Group and Display ###
-        ImageReconstruction=ui.create_column_widget()
-        ImageReconstruction.add(GetDIParamsRow)
-        ImageReconstruction.add(GetDIButtonRow)
-        Menu.add_spacing(12)
-        Menu.add(ImageReconstruction)
-
-        ###################
-        ### Perform DPC ###
-        ###################
 
         ### Calculate Center of Mass Shifts
         GetCOMShiftRow = ui.create_row_widget()
@@ -285,68 +270,14 @@ class GetDPCDelegate(object):
                 lpedit.text = self.lpass
         lpedit.on_editing_finished = lp_editing_finished
         GetPOTRow.add(lpedit)
-
+        
         ### Group and Display ###
         DPC=ui.create_column_widget()
+        DPC.add(SetRadiiRow)
+        DPC.add(GetDIButtonRow)
         DPC.add(GetCOMShiftRow)
         DPC.add(GetERow)
         DPC.add(GetPOTRow)
-        Menu.add_spacing(12)
-        Menu.add(DPC)
-        
-        ####################
-        ### Bin Datasets ###
-        ####################
-
-        ### Set Image Binning
-        Bin4DRow = ui.create_row_widget()
-        Bin4DRow.add_spacing(8)
-        Bin4DRow.add(ui.create_label_widget("Bin Image by: "))
-        binimageedit = ui.create_line_edit_widget()
-        binimageedit.text = self.binIN
-        def bin_image_editing_finished(n):
-            try:
-                if float(self.binIN)!=float(n): print('Setting Image Bin Value to '+str(n))
-                self.binIN=int(n)
-                binimageedit.text = self.binIN 
-            except ValueError:
-                print('GotValueError: Did Not Change Image Binning Value')
-                binimageedit.text = self.binIN
-        binimageedit.on_editing_finished = bin_image_editing_finished
-        Bin4DRow.add(binimageedit)
-        Bin4DRow.add_spacing(8)
-        
-        ### Set Ronchigram Binning
-        Bin4DRow.add(ui.create_label_widget("Bin Ronchigrams by: "))
-        binronchiedit = ui.create_line_edit_widget()
-        binronchiedit.text = self.binRN
-        def bin_ronchi_editing_finished(n):
-            try:
-                if float(self.binRN)!=float(n): print('Setting Ronchigram Bin Value to '+str(n))
-                self.binRN=int(n)
-                binronchiedit.text = self.binRN 
-            except ValueError:
-                print('GotValueError: Did Not Change Ronchigram Binning Value')
-                binronchieditedit.text = self.binRN
-        binronchiedit.on_editing_finished = bin_ronchi_editing_finished
-        Bin4DRow.add(binronchiedit)
-        Bin4DRow.add_spacing(8)
-        
-        ### Bin Ronchigram Button
-        BinButtonRow = ui.create_row_widget()
-        bin_button = ui.create_push_button_widget("Bin It!")
-        def Bin4D_clicked():
-            self.ptyuuid=document_window.target_data_item.uuid
-            self.GetBinned4D()
-        bin_button.on_clicked = Bin4D_clicked
-        BinButtonRow.add(bin_button)
-
-        ### Group and Display ###
-        BinIt=ui.create_column_widget()
-        BinIt.add(Bin4DRow)
-        BinIt.add(BinButtonRow)
-        Menu.add_spacing(12)
-        Menu.add(BinIt)
         
         #########################
         ### Clear Stored Data ###
@@ -358,7 +289,12 @@ class GetDPCDelegate(object):
             self.cleardpcuuid()
         clear_button.on_clicked = CLEAR
         ClearRow.add(clear_button)
-        Menu.add_spacing(12)
+
+        Menu = ui.create_column_widget()
+        Menu.add(RonchigramCalibration) 
+        Menu.add_spacing(24)
+        Menu.add(DPC)
+        Menu.add_spacing(8)
         Menu.add(ClearRow)
         return Menu
 
@@ -380,7 +316,6 @@ class GetDPCDelegate(object):
 
     def CalibrateRonchigram(self):
         pty=self.api.library.get_data_item_by_uuid(self.ptyuuid)
-#        t=self.findct#;sig=self.findblur
         R=np.sum(pty.data,axis=(0,1))
         try: NY,NX=R.shape[:2]
         except ValueError: print('ValueError: Select the 4D-STEM Dataset');return
@@ -412,43 +347,12 @@ class GetDPCDelegate(object):
             self.comxuuid=self.api.library.data_items[-1].uuid
             self.api.library.create_data_item_from_data(self.comy)
             self.comyuuid=self.api.library.data_items[-1].uuid
-            #self.api.library.create_data_item_from_data(self.EIM)
             self.dpccalculated=True
         else:
             COMX = self.api.library.get_data_item_by_uuid(self.comxuuid)
             COMX.data=self.comx
             COMY = self.api.library.get_data_item_by_uuid(self.comyuuid)
             COMY.data=self.comy
-           # eim = self.api.library.get_data_item_by_uuid(self.EIMuuid)
-           # eim.data=self.EIM
-
-  #  def ComputeDPC(self):
-  #      pty=self.api.library.get_data_item_by_uuid(self.ptyuuid)
-  #      daty,datx=pty.data.shape[2:]
-  #      fx=2*float(self.rcx+0.5)/datx
-  #      fy=2*float(self.rcy+0.5)/daty
-  #      xran=np.linspace(-fx,2-fx,datx)
-  #      yran=np.linspace(-fy,2-fy,daty)
-  #      xx,yy = np.meshgrid(xran,yran)
-  #      icomx,icomy=np.sum(pty.data*xx,axis=(2,3)),np.sum(pty.data*yy,axis=(2,3))
-  #      self.comx=icomx*np.cos(self.toff)+icomy*np.sin(self.toff)
-  #      self.comy=-icomx*np.sin(self.toff)+icomy*np.cos(self.toff)
-  #      self.EIM=np.sqrt(icomx**2+icomy**2)
-  #      if not self.dpccalculated:
-  #          self.api.library.create_data_item_from_data(self.comx)
-  #          self.comxuuid=self.api.library.data_items[-1].uuid
-  #          self.api.library.create_data_item_from_data(self.comy)
-  #          self.comyuuid=self.api.library.data_items[-1].uuid
-  #          self.api.library.create_data_item_from_data(self.EIM)
-  #          self.EIMuuid=self.api.library.data_items[-1].uuid
-  #          self.dpccalculated=True
-  #      else:
-  #          COMX = self.api.library.get_data_item_by_uuid(self.comxuuid)
-  #          COMX.data=self.comx
-  #          COMY = self.api.library.get_data_item_by_uuid(self.comyuuid)
-  #          COMY.data=self.comy
-  #          eim = self.api.library.get_data_item_by_uuid(self.EIMuuid)
-  #          eim.data=self.EIM
 
     def GetEFields(self):
         import matplotlib.colors
@@ -503,33 +407,8 @@ class GetDPCDelegate(object):
         detim=np.sum(pty*((xx**2+yy**2>=self.ri**2) & (xx**2+yy**2<self.ro**2)),axis=(2,3))
         self.api.library.create_data_item_from_data(detim)
 
-    def Bin4DRealSpace(self):
-#        Nim=self.binIN;Nro=self.binRN
-        pty=self.api.library.get_data_item_by_uuid(self.ptyuuid).data
-        dims=pty.sh
-        X,Y=np.array([pty.shape[0]/Nim,pty.shape[1]/Nim,pty.shape[2]/Nro,pty.shape[3]/Nro]).astype(int)
-        ptybin=np.zeros(bindims)
-        if Nim<=1 and Nro<=1: print('Enter Binning Values > 1'); return
-        elif Nro==1:
-            for i in range(bindims[0]):
-                for j in range(bindims[1]):
-                    ptybin[i,j]=np.average(pty[Nim*i:Nim*(i+1),Nim*j:Nim*(j+1)],axis=(0,1))
-        elif Nim==1:
-            for i in range(bindims[2]):
-                for j in range(bindims[3]):
-                    ptybin[:,:,i,j]=np.average(pty[:,:,Nro*i:Nro*(i+1),Nro*j:Nro*(j+1)],axis=(2,3))
-        else:
-            for i in range(bindims[0]):
-                for j in range(bindims[1]):
-                    for k in range(bindims[2]):
-                        for l in range(bindims[3]):
-                            ptybin[i,j]=np.average(pty[Nim*i:Nim*(i+1),Nim*j:Nim*(j+1),Nro*k:Nro*(k+1),Nro*l:Nro*(l+1)],axis=(0,1,2,3))
-        self.api.library.create_data_item_from_data(ptybin)
-
     def cleardpcuuid(self):
         ptyuuid=None
         self.dpccalculated=False
-        self.cimcalculated=False
+        self.fieldscalculated=False
         self.vimcalculated=False
-
-
