@@ -52,9 +52,32 @@ def GetiCoM(dat4d: np.ndarray, RCX: float, RCY: float, RCal: float, RI: float = 
     maskeddat4d = dat4d * ((X ** 2 + Y ** 2 >= RI ** 2) & (X ** 2 + Y ** 2 < RO ** 2))
     return np.average(maskeddat4d * X, axis=(2, 3)), np.average(maskeddat4d * Y, axis=(2, 3))
 
+def GetPLRotation(dpcx: np.ndarray, dpcy: np.ndarray, *,  order: int = 3, outputall: bool = False) -> float:
+    """Find Rotation from PL Lenses by minimizing curl/maximizing divergence of DPC data
+
+    :param dpcx: X-Component of DPC Data (2D numpy array)
+    :param dpcy: Y-Component of DPC Data (2D numpy array)
+    :param order: Number of times to iterated calculation (int)
+    :param outputall: Output Curl and Divergence curves for all guesses in separate array (bool)
+    :return: The true PL Rotation value (Note: Can potentially be off by 180 degrees, determine by checking signs of charge/field/potential)
+    """
+    def DPC_ACD(dpcx,dpcy,tlow,thigh):        
+        A,C,D=[],[],[]
+        for t in np.linspace(tlow,thigh,10,endpoint=False):            
+            rdpcx,rdpcy=dpcx*np.cos(t)+dpcy*np.sin(t),-dpcx*np.sin(t)+dpcy*np.cos(t)        
+            gXY,gXX=np.gradient(rdpcx);gYY,gYX=np.gradient(rdpcy)        
+            C.append(np.std(gXY-gYX));D.append(np.std(gXX+gYY));A.append(t)
+        R=np.average([A[np.argmin(C)],A[np.argmax(D)]])
+        return R,A,C,D
+    RotCalcs=[]
+    RotCalcs.append(DPC_ACD(dpcx,dpcy,0,np.pi))
+    for i in range(1,order): 
+        RotCalcs.append(DPC_ACD(dpcx,dpcy,RotCalcs[i-1][0]-np.pi/(10**i),RotCalcs[i-1][0]+np.pi/(10**i)))
+    if outputall: return RotCalcs
+    else: return RotCalcs[-1][0]
 
 def GetElectricFields(dpcx: np.ndarray, dpcy: np.ndarray, *, rotation: float = 0, LegPix: int = 301, LegRad: float = 0.85) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Convert DPCX and DPCY maps to to a color map where the color corresponds to the angle
+    """Convert dpcx and dpcy maps to to a color map where the color corresponds to the angle
 
     :param dpcx: X-Component of DPC Data (2D numpy array)
     :param dpcy: Y-Component of DPC Data (2D numpy array)
@@ -70,19 +93,21 @@ def GetElectricFields(dpcx: np.ndarray, dpcy: np.ndarray, *, rotation: float = 0
 
     EMag = np.sqrt(rEX ** 2 + rEY ** 2)
 
-    EDir = np.zeros(rEX.shape + (3,), dtype=float)
+    XY = np.zeros(rEX.shape + (3,), dtype=float)
     M = np.amax(EMag)
     EMagScale = EMag / M
     for i in range(rEX.shape[0]):
         for j in range(rEX.shape[1]):
-            EDir[i, j] = np.angle(np.complex(rEX[i, j], rEY[i, j])) / (2 * np.pi) % 1, 1, EMagScale[i, j]
+            XY[i, j] = np.angle(np.complex(rEX[i, j], rEY[i, j])) / (2 * np.pi) % 1, 1, EMagScale[i, j]
+    EDir=hsv_to_rgb(XY)
     x, y = np.meshgrid(np.linspace(-1, 1, LegPix, endpoint=True), np.linspace(-1, 1, LegPix, endpoint=True))
     X, Y = x * (x ** 2 + y ** 2 < LegRad ** 2), y * (x ** 2 + y ** 2 < LegRad ** 2)
-    EDirLeg = np.zeros(X.shape + (3,), dtype=float)
+    XYLeg = np.zeros(X.shape + (3,), dtype=float)
     RI = np.sqrt(X ** 2 + Y ** 2) / np.amax(np.sqrt(X ** 2 + Y ** 2))
     for i in range(X.shape[0]):
         for j in range(X.shape[1]):
-            EDirLeg[i, j] = np.angle(np.complex(X[i, j], Y[i, j])) / (2 * np.pi) % 1, 1, RI[i, j]
+            XYLeg[i, j] = np.angle(np.complex(X[i, j], Y[i, j])) / (2 * np.pi) % 1, 1, RI[i, j]
+    EDirLeg=hsv_to_rgb(XYLeg)
     return EMag, EDir, EDirLeg
 
 def GetChargeDensity(dpcx: np.ndarray, dpcy: np.ndarray, *, rotation: float = 0) -> np.ndarray:

@@ -6,7 +6,7 @@ import scipy
 import threading
 
 # local libraries
-from .getdpc import GetDPC
+from getdpc import GetDPC
 
 # third party libraries
 from nion.data import Calibration
@@ -353,6 +353,7 @@ class GetDPCDelegate(object):
         Menu.add(Electro)
         Menu.add_spacing(8)
         Menu.add(ClearRow)
+        Menu.add_stretch()
         return Menu
 
 ##########################################
@@ -402,7 +403,7 @@ class GetDPCDelegate(object):
         DPCX,DPCY=self.dpcx,self.dpcy
         G=DPC_ACD(DPCX,DPCY,0,np.pi)
         for i in range(1,3): G=DPC_ACD(DPCX,DPCY,G-np.pi/(10**i),G+np.pi/(10**i))
-        self.rotation=G
+        self.rotation=GetDPC.GetPLRotation(self.dpcx,self.dpcy)
         print('Calculated PL Rotation Angle as '+str(round(self.rotation*180/np.pi,1))+' degrees`')
 
     def GetICOM(self):
@@ -431,16 +432,12 @@ class GetDPCDelegate(object):
 
     def GetEFields(self):
         EMag, EDir, EDirLeg = GetDPC.GetElectricFields(self.dpcx, self.dpcy, rotation=self.rotation)
-
-        import matplotlib.colors
-
-        self.EIM=EMag
-   
-        CIMxd=xd.rgb(*np.transpose(matplotlib.colors.hsv_to_rgb(EDir),(2,0,1)))
-        CLEGxd=xd.rgb(*np.transpose(matplotlib.colors.hsv_to_rgb(EDirLeg),(2,0,1)))
+       # self.EIM=EMag  
+       # CIMxd=xd.rgb(*np.transpose(EDir,(2,0,1)))
+       # CLEGxd=xd.rgb(*np.transpose(EDirLeg,(2,0,1)))
         
         if not self.fieldscalculated:
-            self.api.library.create_data_item_from_data(self.EIM)
+            self.api.library.create_data_item()
             self.EIMuuid=self.api.library.data_items[-1].uuid
             self.api.library.create_data_item()
             self.CIMuuid=self.api.library.data_items[-1].uuid
@@ -449,8 +446,9 @@ class GetDPCDelegate(object):
             EIM=self.api.library.get_data_item_by_uuid(self.EIMuuid)
             CIM=self.api.library.get_data_item_by_uuid(self.CIMuuid)
             CLEG=self.api.library.get_data_item_by_uuid(self.CLEGuuid)
-            CIM.xdata=CIMxd
-            CLEG.xdata=CLEGxd
+            EIM.data=EMag
+            CIM.xdata=xd.rgb(*np.transpose(EDir,(2,0,1)))
+            CLEG.xdata=xd.rgb(*np.transpose(EDirLeg,(2,0,1)))
             EIM.title=('E-Field Magnitude')
             CIM.title=('E-Field Vectors (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
             CLEG.title=('E-Field Vectors Legend')
@@ -459,9 +457,9 @@ class GetDPCDelegate(object):
             EIM = self.api.library.get_data_item_by_uuid(self.EIMuuid)
             CIM=self.api.library.get_data_item_by_uuid(self.CIMuuid)
             CLEG=self.api.library.get_data_item_by_uuid(self.CLEGuuid)
-            EIM.data=self.EIM
-            CIM.xdata=CIMxd
-            CLEG.xdata=CLEGxd
+            EIM.data=EMag
+            CIM.xdata=xd.rgb(*np.transpose(EDir,(2,0,1)))
+            CLEG.xdata=xd.rgb(*np.transpose(EDirLeg,(2,0,1)))
             EIM.title=('E-Field Magnitude')
             CIM.title=('E-Field Vectors (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
             CLEG.title=('E-Field Vectors Legend')
