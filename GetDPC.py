@@ -5,6 +5,9 @@ import numpy as np
 import scipy
 import threading
 
+# local libraries
+from .getdpc import GetDPC
+
 # third party libraries
 from nion.data import Calibration
 from nion.data import DataAndMetadata
@@ -224,23 +227,15 @@ class GetDPCDelegate(object):
 
         ### Calculate Center of Mass Shifts
         GetCOMShiftRow = ui.create_row_widget()
-        getcom_button = ui.create_push_button_widget("DPC=Center of Mass Shifts")
+        getcom_button = ui.create_push_button_widget("Get Center of Mass Shifts")
         def GetCOM_clicked():
             self.GetICOM()
         getcom_button.on_clicked = GetCOM_clicked
         GetCOMShiftRow.add(getcom_button)
-
-        ### Calculate Disk Shifts
-        GetDiskShiftRow = ui.create_row_widget()
-        getds_button = ui.create_push_button_widget("DPC=BF Disk Shifts")
-        def GetDS_clicked():
-            self.GetDiskShifts()
-        getds_button.on_clicked = GetDS_clicked
-        GetDiskShiftRow.add(getds_button)
         
         ### Calculate Rotation from PLs ### 
         CalculatePLRotationRow = ui.create_row_widget()
-        rot_button = ui.create_push_button_widget("Calculate PL Rotation")
+        rot_button = ui.create_push_button_widget("Get PL Rotation")
         def rotclicked():
             self.CalculateRotation()
             rotedit.text = int(self.rotation*180./np.pi)
@@ -269,7 +264,6 @@ class GetDPCDelegate(object):
         DPC.add(SetRadiiRow)
         DPC.add(GetDIButtonRow)
         DPC.add(GetCOMShiftRow)
-        DPC.add(GetDiskShiftRow)
         DPC.add(CalculatePLRotationRow)
 
         #########################################
@@ -379,17 +373,16 @@ class GetDPCDelegate(object):
 
     def CalibrateRonchigram(self):
         dat4d=self.api.library.get_data_item_by_uuid(self.dat4duuid)
-        R=np.average(dat4d.data,axis=(0,1))
-        try: NY,NX=R.shape[:2]
-        except ValueError: print('ValueError: Select the 4D-STEM Dataset');return
-        Rn=((R-np.amin(R))/np.ptp(R))
-        BFdisk=np.ones(R.shape)*(Rn>self.findct)
-        self.absct=self.findct*np.ptp(R)
-        xx,yy = np.meshgrid(np.arange(0,NY), np.arange(0,NX))
-        self.rcx = np.sum(BFdisk*xx/np.sum(BFdisk))
-        self.rcy = np.sum(BFdisk*yy/np.sum(BFdisk))
-        edge=(np.sum(np.abs(np.gradient(BFdisk)),axis=0))>self.findct
-        self.pixcal=np.average(np.sqrt((xx-self.rcx)**2+(yy-self.rcy)**2)[edge])/self.conv
+        R, rcx, rcy, pixcal, BFdisk, absct, edge = GetDPC.CalibrateRonchigram(dat4d.data, self.conv, self.findct)
+        try:
+            NY, NX = R.shape[:2]
+        except ValueError:
+            print('ValueError: Select the 4D-STEM Dataset')
+            return
+        self.absct = absct
+        self.rcx = rcx
+        self.rcy = rcy
+        self.pixcal=pixcal
         print('Calibrated Ronchigrams. Sub-Pixel Center of BF Disk: X-'+str(round(self.rcx,2))+' Y-'+str(round(self.rcy,2))+'    Calibration: '+str(round(self.pixcal,2))+' pixels/mrad')
         if len(dat4d.graphics)<1:
             daty,datx=R.data.shape
@@ -414,10 +407,7 @@ class GetDPCDelegate(object):
 
     def GetICOM(self):
         dat4d=self.api.library.get_data_item_by_uuid(self.dat4duuid)
-        dims=dat4d.data.shape
-        xx,yy = np.meshgrid((np.arange(0,dims[3])-self.rcx)/self.pixcal,(np.arange(0,dims[2])-self.rcy)/self.pixcal)
-        maskdat=dat4d.data*((xx**2+yy**2<self.ro**2)&(xx**2+yy**2>=self.ri**2))
-        self.dpcx,self.dpcy=np.average(maskdat*xx,axis=(2,3)),np.average(maskdat*yy,axis=(2,3))
+        self.dpcx, self.dpcy = GetDPC.GetiCoM(dat4d.data, self.rcx, self.rcy, self.pixcal, self.ri, self.ro)
         rdpcx=self.dpcx*np.cos(self.rotation)+self.dpcy*np.sin(self.rotation)
         rdpcy=-self.dpcx*np.sin(self.rotation)+self.dpcy*np.cos(self.rotation)
         print('Calculated DPC from Center of Mass Shifts')
@@ -439,57 +429,16 @@ class GetDPCDelegate(object):
             DPCX.title=('CoM Shifts X-Component (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
             DPCY.title=('CoM Shifts Y-Component (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
 
-    def GetDiskShifts(self):
-        dat4d=self.api.library.get_data_item_by_uuid(self.dat4duuid)
-        dims=dat4d.data.shape
-        BFdisks=np.array([[np.ones(dims[2:])*((R-np.amin(R))>self.absct) for R in row] for row in dat4d.data])
-        BFI=np.sum(BFdisks,axis=(2,3))
-        xx,yy = np.meshgrid(np.arange(0,dims[3])/self.pixcal,np.arange(0,dims[2])/self.pixcal)
-        self.dpcx=np.sum(np.divide((BFdisks*xx).transpose(2,3,0,1),BFI),axis=(0,1))-self.rcx
-        self.dpcy=np.sum(np.divide((BFdisks*yy).transpose(2,3,0,1),BFI),axis=(0,1))-self.rcy
-        rdpcx=self.dpcx*np.cos(self.rotation)+self.dpcy*np.sin(self.rotation)
-        rdpcy=-self.dpcx*np.sin(self.rotation)+self.dpcy*np.cos(self.rotation)
-        print('Calculated DPC from Bright FIeld DIsk  Shifts')
-        if not self.dpccalculated:
-            self.api.library.create_data_item_from_data(rdpcx)
-            self.dpcxuuid=self.api.library.data_items[-1].uuid
-            self.api.library.create_data_item_from_data(rdpcy)
-            self.dpcyuuid=self.api.library.data_items[-1].uuid
-            self.dpccalculated=True
-            DPCX = self.api.library.get_data_item_by_uuid(self.dpcxuuid)
-            DPCY = self.api.library.get_data_item_by_uuid(self.dpcyuuid)
-            DPCX.title=('BF Disk Shifts X-Component (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
-            DPCY.title=('BF Disk Shifts Y-Component (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
-        else:
-            DPCX = self.api.library.get_data_item_by_uuid(self.dpcxuuid)
-            DPCY = self.api.library.get_data_item_by_uuid(self.dpcyuuid)
-            DPCX.data=rdpcx
-            DPCY.data=rdpcy
-            DPCX.title=('BF Disk Shifts X-Component (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
-            DPCY.title=('BF Disk Shifts Y-Component (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
-
-
     def GetEFields(self):
-        import matplotlib.colors
-        EX=-self.dpcx;EY=-self.dpcy
-        rEX=EX*np.cos(self.rotation)+EY*np.sin(self.rotation)
-        rEY=-EX*np.sin(self.rotation)+EY*np.cos(self.rotation)
-        EMAG=np.sqrt(rEX**2+rEY**2)
-        self.EIM=EMAG
-        XY=np.zeros(rEX.shape+(3,),dtype=float)
-        M=np.amax(EMAG)
-        for i in range(rEX.shape[0]):
-            for j in range(rEX.shape[1]):
-                XY[i,j]=np.angle(np.complex(rEX[i,j],rEY[i,j]))/(2*np.pi)%1,1,EMAG[i,j]/M
-        self.CIMxd=xd.rgb(*np.transpose(matplotlib.colors.hsv_to_rgb(XY),(2,0,1)))
-        x,y=np.meshgrid(np.linspace(-1,1,301,endpoint=True),np.linspace(-1,1,301,endpoint=True))
-        X,Y=x*(x**2+y**2<0.75),y*(x**2+y**2<0.75)
-        XY,RI=np.zeros(X.shape+(3,),dtype=float),np.sqrt(X**2+Y**2)/np.amax(np.sqrt(X**2+Y**2))
-        for i in range(X.shape[0]):
-            for j in range(X.shape[1]):
-                XY[i,j]=np.angle(np.complex(X[i,j],Y[i,j]))/(2*np.pi)%1,1,RI[i,j]
-        self.CLEGxd=xd.rgb(*np.transpose(matplotlib.colors.hsv_to_rgb(XY),(2,0,1)))
+        EMag, EDir, EDirLeg = GetDPC.GetElectricFields(self.dpcx, self.dpcy, rotation=self.rotation)
 
+        import matplotlib.colors
+
+        self.EIM=EMag
+   
+        CIMxd=xd.rgb(*np.transpose(matplotlib.colors.hsv_to_rgb(EDir),(2,0,1)))
+        CLEGxd=xd.rgb(*np.transpose(matplotlib.colors.hsv_to_rgb(EDirLeg),(2,0,1)))
+        
         if not self.fieldscalculated:
             self.api.library.create_data_item_from_data(self.EIM)
             self.EIMuuid=self.api.library.data_items[-1].uuid
@@ -500,8 +449,8 @@ class GetDPCDelegate(object):
             EIM=self.api.library.get_data_item_by_uuid(self.EIMuuid)
             CIM=self.api.library.get_data_item_by_uuid(self.CIMuuid)
             CLEG=self.api.library.get_data_item_by_uuid(self.CLEGuuid)
-            CIM.xdata=self.CIMxd
-            CLEG.xdata=self.CLEGxd
+            CIM.xdata=CIMxd
+            CLEG.xdata=CLEGxd
             EIM.title=('E-Field Magnitude')
             CIM.title=('E-Field Vectors (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
             CLEG.title=('E-Field Vectors Legend')
@@ -511,25 +460,14 @@ class GetDPCDelegate(object):
             CIM=self.api.library.get_data_item_by_uuid(self.CIMuuid)
             CLEG=self.api.library.get_data_item_by_uuid(self.CLEGuuid)
             EIM.data=self.EIM
-            CIM.xdata=self.CIMxd
-            CLEG.xdata=self.CLEGxd
+            CIM.xdata=CIMxd
+            CLEG.xdata=CLEGxd
             EIM.title=('E-Field Magnitude')
             CIM.title=('E-Field Vectors (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
             CLEG.title=('E-Field Vectors Legend')
 
     def GetPotential(self):
-        rdpcx=self.dpcx*np.cos(self.rotation)+self.dpcy*np.sin(self.rotation)
-        rdpcy=-self.dpcx*np.sin(self.rotation)+self.dpcy*np.cos(self.rotation)
-        fCX=np.fft.fftshift(np.fft.fft2(np.fft.fftshift(-rdpcx)))   
-        fCY=np.fft.fftshift(np.fft.fft2(np.fft.fftshift(-rdpcy)))
-        KX=fCX.shape[1];KY=fCY.shape[0]
-        kxran=np.linspace(-1,1,KX,endpoint=True)
-        kyran=np.linspace(-1,1,KY,endpoint=True)
-        kx,ky=np.meshgrid(kxran,kyran)
-        fCKX=fCX*kx;fCKY=fCY*ky;fnum=(fCKX+fCKY)
-        fdenom=np.pi*2*(0+1j)*(self.hpass+(kx**2+ky**2)+self.lpass*(kx**2+ky**2)**2)
-        fK=np.divide(fnum,fdenom)
-        self.VIM=np.real(np.fft.ifftshift(np.fft.ifft2(np.fft.ifftshift(fK))))
+        self.VIM = GetDPC.GetPotential(self.dpcx, self.dpcy, rotation=self.rotation, hpass=self.hpass, lpass=self.lpass)
         if not self.vimcalculated:
             self.api.library.create_data_item_from_data(self.VIM)
             self.VIMuuid=self.api.library.data_items[-1].uuid
@@ -542,16 +480,13 @@ class GetDPCDelegate(object):
             VIM.data=self.VIM
 
     def GetChargeDensity(self):
-        rdpcx=self.dpcx*np.cos(self.rotation)+self.dpcy*np.sin(self.rotation)
-        rdpcy=-self.dpcx*np.sin(self.rotation)+self.dpcy*np.cos(self.rotation)
-        gx,gy=np.gradient(rdpcx)[1],np.gradient(rdpcy)[0] 
-        self.RHO=gx+gy
+        self.RHO=GetDPC.GetChargeDensity(self.dpcx, self.dpcy, rotation=self.rotation)
         if not self.rhocalculated:
             self.api.library.create_data_item_from_data(self.RHO)
             self.RHOuuid=self.api.library.data_items[-1].uuid
             RHO = self.api.library.get_data_item_by_uuid(self.RHOuuid)
             RHO.title=('Charge Density (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
-            self.RHOcalculated=True
+            self.rhocalculated=True
         else:
             RHO = self.api.library.get_data_item_by_uuid(self.RHOuuid)
             RHO.title=('Charge Density (Rotation='+str(round(self.rotation*180/np.pi,1))+' degrees)')
@@ -559,9 +494,7 @@ class GetDPCDelegate(object):
 
     def GetDetectorImage(self):
         dat4d=self.api.library.get_data_item_by_uuid(self.dat4duuid).data
-        dims=dat4d.shape
-        xx,yy = np.meshgrid((np.arange(0,dims[3])-self.rcx)/self.pixcal,(np.arange(0,dims[2])-self.rcy)/self.pixcal) 
-        detim=np.average(dat4d*((xx**2+yy**2>=self.ri**2) & (xx**2+yy**2<self.ro**2)),axis=(2,3))
+        detim = GetDPC.GetDetectorImage(dat4d, self.rcx, self.rcy, self.pixcal, self.ri, self.ro)
         if not self.detimgenerated:
             self.api.library.create_data_item_from_data(detim)
             self.detimuuid=self.api.library.data_items[-1].uuid
