@@ -1,6 +1,11 @@
 GetDPC
 ======
-GetDPC is a library, Jupyter notebook, and Nion Swift plug-in package for doing DPC analysis of 4D STEM data.
+GetDPC is a Nion Swift plugin designed for streamlined differential phase contrast (DPC) analysis from 4D-STEM datasets. Here, the 4D-STEM dataset is a 2D array of convergent beam electron diffraction patterns or Ronchigrams. The dataset can be analyzed by creating virtual annular detectors and reconstructing images based only off of the intensity corresponding to the angles of the simulated detector, or by measuring the center-of-mass shifts of the Ronchigram intensity to perform DPC. DPC can be used as a highly versatile phase-contrast imaging technique, and for ultrathin samples can be directly connected to the electrostatic fields and potentials experienced by the electron beam within the material. 
+
+The plugin can be implemented on the STEM acquisition computers for fast analysis of data during experiments, and can also be implemented on personal computers allowing for users to analyze and visualize electrostatics and produce image reconstructions without any coding/scripting background.
+
+In addition to the plugin, all functions are included in an external library which can be imported directly into iPython Notebooks for more intensive analyses. A demo notebook is also included to guide users through a successful DPC analysis of a 4D-STEM dataset.
+
 
 Usage Instructions (Nion Swift)
 -------------------------------
