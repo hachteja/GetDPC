@@ -44,7 +44,7 @@ class GetDPCDelegate(object):
         self.rotation=0.
         self.conv = 32.
         self.ri = 0.
-        self.ro = self.conv
+        self.ro = self.conv*1.1
         self.dpcri = self.ri
         self.dpcro = self.ro
         self.pixcal = 1.
@@ -409,8 +409,8 @@ class GetDPCDelegate(object):
     def GetICOM(self):
         dat4d=self.api.library.get_data_item_by_uuid(self.dat4duuid)
         self.dpcx, self.dpcy = GetDPC.GetiCoM(dat4d.data, self.rcx, self.rcy, self.pixcal, self.ri, self.ro)
-        rdpcx=self.dpcx*np.cos(self.rotation)+self.dpcy*np.sin(self.rotation)
-        rdpcy=-self.dpcx*np.sin(self.rotation)+self.dpcy*np.cos(self.rotation)
+        rdpcx=self.dpcx*np.cos(self.rotation)-self.dpcy*np.sin(self.rotation)
+        rdpcy=self.dpcx*np.sin(self.rotation)+self.dpcy*np.cos(self.rotation)
         print('Calculated DPC from Center of Mass Shifts')
         if not self.dpccalculated:
             self.api.library.create_data_item_from_data(rdpcx)

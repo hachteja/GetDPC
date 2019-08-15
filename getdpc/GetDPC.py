@@ -64,7 +64,7 @@ def GetPLRotation(dpcx: np.ndarray, dpcy: np.ndarray, *,  order: int = 3, output
     def DPC_ACD(dpcx,dpcy,tlow,thigh):        
         A,C,D=[],[],[]
         for t in np.linspace(tlow,thigh,10,endpoint=False):            
-            rdpcx,rdpcy=dpcx*np.cos(t)+dpcy*np.sin(t),-dpcx*np.sin(t)+dpcy*np.cos(t)        
+            rdpcx,rdpcy=dpcx*np.cos(t)-dpcy*np.sin(t),dpcx*np.sin(t)+dpcy*np.cos(t)        
             gXY,gXX=np.gradient(rdpcx);gYY,gYX=np.gradient(rdpcy)        
             C.append(np.std(gXY-gYX));D.append(np.std(gXX+gYY));A.append(t)
         R=np.average([A[np.argmin(C)],A[np.argmax(D)]])
@@ -88,8 +88,8 @@ def GetElectricFields(dpcx: np.ndarray, dpcy: np.ndarray, *, rotation: float = 0
     """
     EX = -dpcx
     EY = -dpcy
-    rEX = EX * np.cos(rotation) + EY * np.sin(rotation)
-    rEY = -EX * np.sin(rotation) + EY * np.cos(rotation)
+    rEX = EX * np.cos(rotation) - EY * np.sin(rotation)
+    rEY = EX * np.sin(rotation) + EY * np.cos(rotation)
 
     EMag = np.sqrt(rEX ** 2 + rEY ** 2)
 

@@ -6,6 +6,7 @@ The plugin can be implemented on the STEM acquisition computers for fast analysi
 
 In addition to the plugin, all functions are included in an external library which can be imported directly into iPython Notebooks for more intensive analyses. A demo notebook is also included to guide users through a successful DPC analysis of a 4D-STEM dataset.
 
+If you found this Plugin to be helpful and it led to a publication please cite our paper: J.A. Hachtel, J.C. Idrobo, and M. Chi, *Adv. Struct. Chem. Imag.* **4** (2018)
 
 Usage Instructions (Nion Swift)
 -------------------------------
